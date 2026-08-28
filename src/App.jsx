@@ -150,7 +150,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('manifest'); // 'manifest' | 'skuSummary' | 'history'
   const [skuSortMode, setSkuSortMode] = useState('orders'); // 'orders' | 'qty' | 'sku'
   const [skuSearchQuery, setSkuSearchQuery] = useState('');
-  const [sortMode, setSortMode] = useState('size'); // 'size' | 'sku'
+  const [sortMode, setSortMode] = useState('sku'); // 'sku' | 'size'
   const [filterSizes, setFilterSizes] = useState(new Set()); // empty Set = all
   const [filterSkus, setFilterSkus] = useState(new Set());   // empty Set = all
   const [fileName, setFileName] = useState('');
@@ -355,7 +355,8 @@ export default function App() {
 
   const exportFlatJson = () => {
     const payload = sorted.map(({ id, page, ...rest }) => rest);
-    download('shipments_sorted_by_size.json', JSON.stringify(payload, null, 2));
+    const label = sortMode === 'sku' ? 'by_sku' : 'by_size';
+    download(`shipments_sorted_${label}.json`, JSON.stringify(payload, null, 2));
   };
 
   const exportGroupedJson = () => {
