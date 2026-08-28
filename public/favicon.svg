@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="2" dy="2" stdDeviation="0" flood-color="#211F1B"/>
+    </filter>
+  </defs>
+  <!-- Background Badge Shape -->
+  <rect x="4" y="4" width="54" height="54" rx="10" fill="#2A5D50" stroke="#211F1B" stroke-width="2.5" filter="url(#shadow)"/>
+  <!-- Inner label paper -->
+  <rect x="9" y="9" width="44" height="44" rx="6" fill="#F6F3EC"/>
+  <!-- Tag hole in corner -->
+  <circle cx="16" cy="16" r="3" fill="#2A5D50"/>
+  <!-- Size tag indicator dot in terracotta -->
+  <circle cx="45" cy="17" r="4.5" fill="#B0472F"/>
+  <!-- Bold "M" Brand Letter in center -->
+  <path d="M19 36V22L27.5 31.5L36 22V36H32V27.5L27.5 32.5L23 27.5V36H19Z" fill="#2A5D50"/>
+  <!-- Shipping Barcode Lines at bottom -->
+  <rect x="14" y="42" width="4" height="6" fill="#211F1B" rx="1"/>
+  <rect x="21" y="42" width="2" height="6" fill="#211F1B" rx="0.5"/>
+  <rect x="26" y="42" width="5" height="6" fill="#211F1B" rx="1"/>
+  <rect x="34" y="42" width="2" height="6" fill="#211F1B" rx="0.5"/>
+  <rect x="39" y="42" width="4" height="6" fill="#211F1B" rx="1"/>
+  <rect x="46" y="42" width="3" height="6" fill="#B0472F" rx="0.5"/>
+</svg>
