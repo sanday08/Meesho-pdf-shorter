@@ -13,16 +13,34 @@ export function sizeRank(sizeRaw) {
 
 export function sortRecordsBySize(records) {
   return [...records].sort((a, b) => {
+    // 1. First priority: Size
     const r = sizeRank(a.size) - sizeRank(b.size);
     if (r !== 0) return r;
+    // 2. Second priority: SKU
+    const skuCmp = (a.sku || '').localeCompare(b.sku || '');
+    if (skuCmp !== 0) return skuCmp;
+    // 3. Third priority: Customer Name
     return (a.customerName || '').localeCompare(b.customerName || '');
   });
 }
 
 export function sortRecordsBySku(records) {
   return [...records].sort((a, b) => {
-    const skuCmp = (a.sku || '').localeCompare(b.sku || '');
-    if (skuCmp !== 0) return skuCmp;
+    // 1. First priority: Base SKU
+    const skuA = normalizeSku(a.sku);
+    const skuB = normalizeSku(b.sku);
+    const baseSkuCmp = skuA.localeCompare(skuB);
+    if (baseSkuCmp !== 0) return baseSkuCmp;
+
+    // 2. Second priority: Size order (XXS -> XS -> S -> M -> L -> XL -> XXL...)
+    const sizeCmp = sizeRank(a.size) - sizeRank(b.size);
+    if (sizeCmp !== 0) return sizeCmp;
+
+    // 3. Third priority: Raw SKU
+    const rawSkuCmp = (a.sku || '').localeCompare(b.sku || '');
+    if (rawSkuCmp !== 0) return rawSkuCmp;
+
+    // 4. Fourth priority: Customer Name
     return (a.customerName || '').localeCompare(b.customerName || '');
   });
 }
