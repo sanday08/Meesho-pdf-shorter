@@ -42,9 +42,28 @@ export function groupBySize(records) {
   return ordered;
 }
 
+export const SKU_PREFIX_KEYWORDS = [
+  'ORBIT',
+  'ORBT',
+  'RTFN',
+  'RTN',
+  'QRP',
+  'TTF',
+  'VDT',
+  'VD',
+  'DD',
+  'RC',
+  'RF',
+  'TC',
+  'SAC',
+];
+
+const PREFIX_PATTERN = SKU_PREFIX_KEYWORDS.slice().sort((a, b) => b.length - a.length).join('|');
+const PREFIX_REGEX = new RegExp(`^(?:(?:${PREFIX_PATTERN})[-_ ]*)+`, 'i');
+
 /**
  * Normalizes an SKU by:
- * 1. Removing prefixes 'rf-', 'rc-', 'dd-' (case-insensitive)
+ * 1. Removing vendor prefixes: ORBIT, ORBT, QRP, RTFN, RTN, TTF, VD, VDT, DD, RC, RF, TC, SAC (case-insensitive)
  * 2. Removing '001', '002', '003', '004', '005', '006', '007', '008', '009'
  * 3. Cleaning leftover delimiters
  */
@@ -52,8 +71,8 @@ export function normalizeSku(rawSku) {
   if (!rawSku) return 'UNKNOWN';
   let sku = String(rawSku).trim();
 
-  // 1. Ignore rf-, rc-, dd-, tc-, sac- (case-insensitive with optional hyphens/spaces/underscores)
-  sku = sku.replace(/^(?:rf|rc|dd|tc|sac)[-_ ]*/i, '');
+  // 1. Ignore prefixes with optional hyphens/spaces/underscores
+  sku = sku.replace(PREFIX_REGEX, '');
 
   // 2. Ignore 001, 002, 003, 004, 005, 006, 007, 008, 009
   sku = sku.replace(/00[1-9]/g, '');
