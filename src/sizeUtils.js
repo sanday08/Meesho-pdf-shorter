@@ -64,7 +64,7 @@ const PREFIX_REGEX = new RegExp(`^(?:(?:${PREFIX_PATTERN})[-_ ]*)+`, 'i');
 /**
  * Normalizes an SKU by:
  * 1. Removing vendor prefixes: ORBIT, ORBT, QRP, RTFN, RTN, TTF, VD, VDT, DD, RC, RF, TC, SAC (case-insensitive)
- * 2. Removing '001', '002', '003', '004', '005', '006', '007', '008', '009'
+ * 2. Removing all digits/numbers
  * 3. Cleaning leftover delimiters
  */
 export function normalizeSku(rawSku) {
@@ -74,8 +74,8 @@ export function normalizeSku(rawSku) {
   // 1. Ignore prefixes with optional hyphens/spaces/underscores
   sku = sku.replace(PREFIX_REGEX, '');
 
-  // 2. Ignore 001, 002, 003, 004, 005, 006, 007, 008, 009
-  sku = sku.replace(/00[1-9]/g, '');
+  // 2. Ignore all digits/numbers in SKU
+  sku = sku.replace(/\d+/g, '');
 
   // 3. Clean up leftover duplicate/leading/trailing hyphens or underscores
   sku = sku.replace(/[-_ ]{2,}/g, '-').replace(/^[-_ ]+|[-_ ]+$/g, '');

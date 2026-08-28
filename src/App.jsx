@@ -661,7 +661,7 @@ export default function App() {
 
                 <div className="sku-summary-banner">
                   <span className="banner-tag">Normalized Rule</span>
-                  <span>Prefixes <code>ORBIT</code>, <code>ORBT</code>, <code>QRP</code>, <code>RTFN</code>, <code>RTN</code>, <code>TTF</code>, <code>VDT</code>, <code>VD</code>, <code>DD</code>, <code>RC</code>, <code>RF</code> and codes <code>001–009</code> are ignored and merged into their base SKU.</span>
+                  <span>Prefixes (<code>ORBIT</code>, <code>ORBT</code>, <code>QRP</code>, <code>RTFN</code>, <code>RTN</code>, <code>TTF</code>, <code>VDT</code>, <code>VD</code>, <code>DD</code>, <code>RC</code>, <code>RF</code>) and all digits/numbers are ignored and merged into their base SKU.</span>
                 </div>
 
                 <section className="toolbar">
