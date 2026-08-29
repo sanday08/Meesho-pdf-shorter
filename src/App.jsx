@@ -6,18 +6,42 @@ import { sortRecordsBySize, sortRecordsBySku, groupBySize, groupRecordsByBaseSku
 const PASSKEY_CONSTANT = 'Sanday@89';
 const RECENT_FILES_KEY = 'manifest_recent_files_v1';
 
-function getRecentFiles() {
+const GITHUB_OWNER = 'sanday08';
+const GITHUB_REPO = 'Meesho-pdf-shorter';
+// IMPORTANT: Replace this placeholder with your Personal Access Token
+// WARNING: If this repo is public, anyone can steal this token!
+const GITHUB_PAT = 'YOUR_GITHUB_PAT_HERE';
+
+async function fetchRecentFiles() {
   try {
-    const data = localStorage.getItem(RECENT_FILES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
+    const promises = Array.from({ length: 7 }, (_, i) => {
+      const fileSlot = `0${i + 1}.json`;
+      return fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/src/${fileSlot}`, {
+        headers: GITHUB_PAT !== 'YOUR_GITHUB_PAT_HERE' ? {
+          'Authorization': `token ${GITHUB_PAT}`,
+          'Accept': 'application/vnd.github.v3+json'
+        } : { 'Accept': 'application/vnd.github.v3+json' }
+      }).then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.content) {
+            const decoded = decodeURIComponent(escape(atob(data.content)));
+            if (decoded.trim()) {
+              return { slot: fileSlot, sha: data.sha, data: JSON.parse(decoded) };
+            }
+            return { slot: fileSlot, sha: data.sha, data: null };
+          }
+          return { slot: fileSlot, sha: null, data: null };
+        }).catch(() => ({ slot: fileSlot, sha: null, data: null }));
+    });
+    return await Promise.all(promises);
+  } catch (err) {
+    console.error('Failed to fetch recent files:', err);
     return [];
   }
 }
 
-function saveRecentFile(fileName, records) {
+async function saveRecentFile(fileName, records, currentSlots) {
   try {
-    const list = getRecentFiles();
     const newEntry = {
       id: 'file-' + Date.now(),
       fileName: fileName || 'Untitled.pdf',
@@ -26,13 +50,56 @@ function saveRecentFile(fileName, records) {
       recordCount: records.length,
       records: records.map(({ id: _, ...rest }, i) => ({ id: `page-${i + 1}`, ...rest })),
     };
-    // Stores the last 7 files
-    const updated = [newEntry, ...list.filter((f) => f.fileName !== fileName)].slice(0, 7);
-    localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updated));
+
+    // Find first empty slot, or the oldest slot to overwrite
+    let targetSlot = currentSlots.find(s => !s.data);
+    if (!targetSlot) {
+      targetSlot = currentSlots.reduce((oldest, current) => {
+        if (!oldest.data) return current;
+        if (!current.data) return oldest;
+        return new Date(oldest.data.timestamp) < new Date(current.data.timestamp) ? oldest : current;
+      });
+    }
+
+    // fallback if somehow undefined
+    if (!targetSlot) targetSlot = { slot: '01.json', sha: null, data: null };
+
+    const contentBase64 = btoa(unescape(encodeURIComponent(JSON.stringify(newEntry, null, 2))));
+    
+    if (GITHUB_PAT === 'YOUR_GITHUB_PAT_HERE') {
+      console.warn("GitHub PAT is missing, cannot save to repository. Simulating save locally.");
+      const updated = [...currentSlots];
+      const idx = updated.findIndex(s => s.slot === targetSlot.slot);
+      if (idx !== -1) updated[idx] = { ...updated[idx], data: newEntry };
+      return updated;
+    }
+
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/src/${targetSlot.slot}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${GITHUB_PAT}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: `Update ${targetSlot.slot} with new uploaded file`,
+        content: contentBase64,
+        sha: targetSlot.sha || undefined
+      })
+    });
+
+    if (!res.ok) throw new Error('Failed to commit to GitHub');
+    const resultData = await res.json();
+    
+    const updated = [...currentSlots];
+    const idx = updated.findIndex(s => s.slot === targetSlot.slot);
+    if (idx !== -1) {
+      updated[idx] = { slot: targetSlot.slot, sha: resultData.content.sha, data: newEntry };
+    }
     return updated;
   } catch (err) {
     console.error('Failed to save recent file:', err);
-    return getRecentFiles();
+    return currentSlots;
   }
 }
 
@@ -155,7 +222,19 @@ export default function App() {
   const [filterSkus, setFilterSkus] = useState(new Set());   // empty Set = all
   const [fileName, setFileName] = useState('');
   const [rawBuffer, setRawBuffer] = useState(null); // original PDF bytes for re-export
-  const [recentFiles, setRecentFiles] = useState(() => getRecentFiles());
+  const [recentFiles, setRecentFiles] = useState([]);
+  const [recentFilesSlots, setRecentFilesSlots] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    setIsLoadingHistory(true);
+    fetchRecentFiles().then(slots => {
+      setRecentFilesSlots(slots);
+      const files = slots.map(s => s.data).filter(Boolean);
+      files.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setRecentFiles(files);
+    }).finally(() => setIsLoadingHistory(false));
+  }, []);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passkeyInput, setPasskeyInput] = useState('');
   const [passkeyError, setPasskeyError] = useState('');
@@ -198,8 +277,7 @@ export default function App() {
   };
 
   const handleClearHistory = () => {
-    if (window.confirm('Are you sure you want to clear stored recent files?')) {
-      localStorage.removeItem(RECENT_FILES_KEY);
+    if (window.confirm('Are you sure you want to hide stored recent files locally? (This does not delete them from GitHub)')) {
       setRecentFiles([]);
     }
   };
@@ -224,9 +302,12 @@ export default function App() {
       const parsed = await parsePdfFile(buf, (page, total) => setProgress({ page, total }));
       setRecords(parsed);
       setStatus('done');
-      // Save last 3 sorted files to local JSON store
-      const updatedList = saveRecentFile(file.name, parsed);
-      setRecentFiles(updatedList);
+      // Save file to GitHub repository
+      const updatedSlots = await saveRecentFile(file.name, parsed, recentFilesSlots);
+      setRecentFilesSlots(updatedSlots);
+      const files = updatedSlots.map(s => s.data).filter(Boolean);
+      files.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setRecentFiles(files);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Something went wrong while reading the PDF.');
