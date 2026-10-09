@@ -74,6 +74,8 @@ export const SKU_PREFIX_KEYWORDS = [
   'RF',
   'TC',
   'SAC',
+  'SD',
+  'GD'
 ];
 
 const PREFIX_PATTERN = SKU_PREFIX_KEYWORDS.slice().sort((a, b) => b.length - a.length).join('|');
