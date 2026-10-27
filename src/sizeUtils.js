@@ -24,11 +24,49 @@ export function sortRecordsBySize(records) {
   });
 }
 
-export function sortRecordsBySku(records) {
+export function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function parsePrefixString(str) {
+  if (!str) return [];
+  return str
+    .split(/[,;\r\n]+/)
+    .map((p) => p.replace(/["']/g, '').trim())
+    .filter(Boolean)
+    .filter((v, i, a) => a.findIndex((t) => t.toUpperCase() === v.toUpperCase()) === i);
+}
+
+export function createPrefixRegex(prefixes = SKU_PREFIX_KEYWORDS) {
+  if (prefixes instanceof RegExp) return prefixes;
+  let list = [];
+  if (typeof prefixes === 'string') {
+    list = parsePrefixString(prefixes);
+  } else if (Array.isArray(prefixes)) {
+    list = prefixes;
+  }
+
+  const valid = list
+    .map((p) => String(p || '').trim().replace(/^[-_ ]+|[-_ ]+$/g, ''))
+    .filter(Boolean);
+
+  if (valid.length === 0) return null;
+
+  const pattern = valid
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegex)
+    .join('|');
+
+  return new RegExp(`^(?:(?:${pattern})[-_ ]*)+`, 'i');
+}
+
+export function sortRecordsBySku(records, prefixes = SKU_PREFIX_KEYWORDS) {
+  const regex = createPrefixRegex(prefixes);
   return [...records].sort((a, b) => {
     // 1. First priority: Base SKU
-    const skuA = normalizeSku(a.sku);
-    const skuB = normalizeSku(b.sku);
+    const skuA = normalizeSku(a.sku, regex);
+    const skuB = normalizeSku(b.sku, regex);
     const baseSkuCmp = skuA.localeCompare(skuB);
     if (baseSkuCmp !== 0) return baseSkuCmp;
 
@@ -78,21 +116,20 @@ export const SKU_PREFIX_KEYWORDS = [
   'GD'
 ];
 
-const PREFIX_PATTERN = SKU_PREFIX_KEYWORDS.slice().sort((a, b) => b.length - a.length).join('|');
-const PREFIX_REGEX = new RegExp(`^(?:(?:${PREFIX_PATTERN})[-_ ]*)+`, 'i');
-
 /**
  * Normalizes an SKU by:
- * 1. Removing vendor prefixes: ORBIT, ORBT, QRP, RTFN, RTN, TTF, VD, VDT, DD, RC, RF, TC, SAC (case-insensitive)
+ * 1. Removing vendor prefixes (case-insensitive) based on configured keywords
  * 2. Removing all digits/numbers
  * 3. Cleaning leftover delimiters
  */
-export function normalizeSku(rawSku) {
+export function normalizeSku(rawSku, prefixes = SKU_PREFIX_KEYWORDS) {
   if (!rawSku) return 'UNKNOWN';
   let sku = String(rawSku).trim();
 
-  // 1. Ignore prefixes with optional hyphens/spaces/underscores
-  sku = sku.replace(PREFIX_REGEX, '');
+  const regex = prefixes instanceof RegExp ? prefixes : createPrefixRegex(prefixes);
+  if (regex) {
+    sku = sku.replace(regex, '');
+  }
 
   // 2. Ignore all digits/numbers in SKU
   sku = sku.replace(/\d+/g, '');
@@ -111,11 +148,12 @@ export function normalizeSku(rawSku) {
  * - Size breakdown (e.g. S: 4, M: 8)
  * - List of original raw SKUs mapping to this base SKU
  */
-export function groupRecordsByBaseSku(records) {
+export function groupRecordsByBaseSku(records, prefixes = SKU_PREFIX_KEYWORDS) {
   const groups = {};
+  const regex = createPrefixRegex(prefixes);
 
   records.forEach((r) => {
-    const baseSku = normalizeSku(r.sku);
+    const baseSku = normalizeSku(r.sku, regex);
     if (!groups[baseSku]) {
       groups[baseSku] = {
         baseSku,

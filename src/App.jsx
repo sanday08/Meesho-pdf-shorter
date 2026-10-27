@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { parsePdfFile } from './pdfParser.js';
-import { sortRecordsBySize, sortRecordsBySku, groupBySize, groupRecordsByBaseSku, normalizeSku } from './sizeUtils.js';
+import { sortRecordsBySize, sortRecordsBySku, groupBySize, groupRecordsByBaseSku, normalizeSku, SKU_PREFIX_KEYWORDS, parsePrefixString } from './sizeUtils.js';
 
 const PASSKEY_CONSTANT = 'Sanday@89';
 const RECENT_FILES_KEY = 'manifest_recent_files_v1';
@@ -208,6 +208,160 @@ function MultiSelect({ id, label, options, selected, onChange }) {
   );
 }
 
+/** SKU Prefix Manager Component */
+function PrefixManager({
+  prefixInput,
+  setPrefixInput,
+  activePrefixes,
+  onReset,
+  onClear,
+  onUploadFile,
+  quickPrefix,
+  setQuickPrefix,
+  onAddPrefix,
+  onRemovePrefix,
+  onClose,
+  isCollapsible = false,
+}) {
+  const fileInputRef = useRef(null);
+
+  return (
+    <section className={`prefix-card ${isCollapsible ? 'prefix-card-collapsible' : ''}`}>
+      <div className="prefix-card-header">
+        <div className="prefix-title-group">
+          <div className="prefix-badge-icon" aria-hidden="true">🏷️</div>
+          <div>
+            <div className="prefix-title-row">
+              <h3 className="prefix-card-title">Manual SKU Prefix Configuration</h3>
+              <span className="prefix-pill-badge">{activePrefixes.length} Active</span>
+            </div>
+            <p className="prefix-card-desc">
+              Upload or enter comma-separated SKU prefixes (e.g. <code>ORBIT, RTFN, VDT, DD, RC, RF</code>).
+              Configured prefixes and all numbers are stripped to group and sort base SKUs.
+            </p>
+          </div>
+        </div>
+        <div className="prefix-header-actions">
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".txt,.csv"
+            style={{ display: 'none' }}
+            onChange={onUploadFile}
+          />
+          <button
+            type="button"
+            className="btn-prefix-action"
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload a .csv or .txt file containing comma-separated prefixes"
+          >
+            <span>📁</span> Upload Prefix File
+          </button>
+          <button
+            type="button"
+            className="btn-prefix-action"
+            onClick={onReset}
+            title="Reset to default prefixes"
+          >
+            ↺ Reset Defaults
+          </button>
+          <button
+            type="button"
+            className="btn-prefix-action btn-prefix-clear"
+            onClick={onClear}
+            title="Clear all prefixes"
+          >
+            ✕ Clear
+          </button>
+          {isCollapsible && onClose && (
+            <button
+              type="button"
+              className="btn-prefix-action btn-prefix-close"
+              onClick={onClose}
+              title="Close prefix manager"
+            >
+              ✕ Close
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="prefix-input-container">
+        <label htmlFor="sku-prefix-textarea" className="prefix-input-label">
+          <span>Comma-Separated SKU Prefixes:</span>
+          <span className="prefix-input-count">
+            Auto-saved · {activePrefixes.length} prefix{activePrefixes.length !== 1 ? 'es' : ''} recognized
+          </span>
+        </label>
+        <textarea
+          id="sku-prefix-textarea"
+          className="prefix-textarea"
+          rows={2}
+          value={prefixInput}
+          onChange={(e) => setPrefixInput(e.target.value)}
+          placeholder="Type or paste comma-separated prefixes: ORBIT, RTFN, VDT, DD, RC, RF, TC, SAC, SD, GD..."
+        />
+      </div>
+
+      <div className="prefix-quick-add-row">
+        <div className="quick-add-input-wrap">
+          <input
+            type="text"
+            className="quick-add-input"
+            placeholder="Quick add single prefix (e.g. NEWPREFIX)..."
+            value={quickPrefix}
+            onChange={(e) => setQuickPrefix(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onAddPrefix();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-quick-add"
+            onClick={onAddPrefix}
+            disabled={!quickPrefix.trim()}
+          >
+            + Add Prefix
+          </button>
+        </div>
+        <span className="quick-add-hint">
+          Case-insensitive. Matching prefixes with hyphens/spaces (e.g. <code>RF-</code> or <code>RF_</code>) will be normalized.
+        </span>
+      </div>
+
+      {activePrefixes.length > 0 && (
+        <div className="prefix-chips-container">
+          <div className="prefix-chips-header">
+            <span className="prefix-chips-label">Active Prefix Tags:</span>
+            <span className="prefix-chips-sub">Click &times; to remove any prefix</span>
+          </div>
+          <div className="prefix-chips-list">
+            {activePrefixes.map((p) => (
+              <span key={p} className="prefix-chip">
+                <span className="chip-text">{p}</span>
+                <button
+                  type="button"
+                  className="chip-remove-btn"
+                  onClick={() => onRemovePrefix(p)}
+                  title={`Remove ${p}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const PREFIX_STORAGE_KEY = 'manifest_sku_prefixes_v2';
+const DEFAULT_PREFIX_STRING = SKU_PREFIX_KEYWORDS.join(', ');
+
 export default function App() {
   const [records, setRecords] = useState([]);
   const [status, setStatus] = useState('idle'); // idle | parsing | done | error
@@ -225,6 +379,75 @@ export default function App() {
   const [recentFiles, setRecentFiles] = useState([]);
   const [recentFilesSlots, setRecentFilesSlots] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const [prefixInput, setPrefixInput] = useState(() => {
+    try {
+      const saved = localStorage.getItem(PREFIX_STORAGE_KEY);
+      if (saved !== null && saved.trim() !== '') return saved;
+    } catch (_) {}
+    return DEFAULT_PREFIX_STRING;
+  });
+
+  const [quickPrefix, setQuickPrefix] = useState('');
+  const [showPrefixManager, setShowPrefixManager] = useState(false);
+
+  const activePrefixes = useMemo(() => {
+    return parsePrefixString(prefixInput);
+  }, [prefixInput]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFIX_STORAGE_KEY, prefixInput);
+    } catch (_) {}
+  }, [prefixInput]);
+
+  const handleAddPrefix = (newPrefix) => {
+    const val = (newPrefix || quickPrefix).trim();
+    if (!val) return;
+    const current = parsePrefixString(prefixInput);
+    if (!current.some((p) => p.toUpperCase() === val.toUpperCase())) {
+      const updated = [...current, val.toUpperCase()];
+      setPrefixInput(updated.join(', '));
+    }
+    setQuickPrefix('');
+  };
+
+  const handleRemovePrefix = (prefixToRemove) => {
+    const current = parsePrefixString(prefixInput);
+    const updated = current.filter(
+      (p) => p.toUpperCase() !== prefixToRemove.toUpperCase()
+    );
+    setPrefixInput(updated.join(', '));
+  };
+
+  const handleResetPrefixes = () => {
+    setPrefixInput(DEFAULT_PREFIX_STRING);
+  };
+
+  const handleClearPrefixes = () => {
+    setPrefixInput('');
+  };
+
+  const handlePrefixFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === 'string') {
+        const newTokens = parsePrefixString(content);
+        if (newTokens.length === 0) {
+          alert('No valid prefixes found in the uploaded file.');
+          return;
+        }
+        const current = parsePrefixString(prefixInput);
+        const combined = Array.from(new Set([...current, ...newTokens]));
+        setPrefixInput(combined.join(', '));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   useEffect(() => {
     setIsLoadingHistory(true);
@@ -328,8 +551,8 @@ export default function App() {
   };
 
   const sorted = useMemo(
-    () => sortMode === 'sku' ? sortRecordsBySku(records) : sortRecordsBySize(records),
-    [records, sortMode]
+    () => sortMode === 'sku' ? sortRecordsBySku(records, activePrefixes) : sortRecordsBySize(records),
+    [records, sortMode, activePrefixes]
   );
 
   const SIZE_ORDER_LOCAL = ['XXS','XS','S','M','L','XL','XXL','XXXL','3XL','4XL','5XL','FREESIZE'];
@@ -375,9 +598,9 @@ export default function App() {
     }));
   }, [records]);
 
-  // SKU Summary calculations (ignoring rf-, rc-, dd- and 001-009)
+  // SKU Summary calculations using active configured prefixes
   const skuSummaryList = useMemo(() => {
-    const list = groupRecordsByBaseSku(records);
+    const list = groupRecordsByBaseSku(records, activePrefixes);
     return list.sort((a, b) => {
       if (skuSortMode === 'orders') {
         const diff = b.totalOrders - a.totalOrders;
@@ -391,7 +614,7 @@ export default function App() {
       }
       return a.baseSku.localeCompare(b.baseSku);
     });
-  }, [records, skuSortMode]);
+  }, [records, skuSortMode, activePrefixes]);
 
   const filteredSkuSummary = useMemo(() => {
     if (!skuSearchQuery.trim()) return skuSummaryList;
@@ -499,6 +722,14 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           <button
+            className={`btn ${showPrefixManager ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setShowPrefixManager((prev) => !prev)}
+            title="Configure manual SKU prefixes"
+          >
+            <span>🏷️</span>
+            <span>Prefixes ({activePrefixes.length})</span>
+          </button>
+          <button
             className={`btn ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => setActiveTab((t) => (t === 'history' ? 'manifest' : 'history'))}
             title="System Diagnostics & Audit"
@@ -526,53 +757,85 @@ export default function App() {
 
       <main>
         {status !== 'done' || records.length === 0 ? (
-          <section
-            className="dropzone"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              hidden
-              onChange={onInputChange}
-            />
-            <div className="dropzone-inner">
-              <div className="tag-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48" width="40" height="40">
-                  <path d="M6 22 L22 6 L42 6 L42 26 L26 42 Z" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
-                  <circle cx="33" cy="15" r="3.2" fill="currentColor" />
-                </svg>
+          <div className="upload-view-wrapper">
+            <section
+              className="dropzone"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                hidden
+                onChange={onInputChange}
+              />
+              <div className="dropzone-inner">
+                <div className="tag-icon" aria-hidden="true">
+                  <svg viewBox="0 0 48 48" width="40" height="40">
+                    <path d="M6 22 L22 6 L42 6 L42 26 L26 42 Z" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" />
+                    <circle cx="33" cy="15" r="3.2" fill="currentColor" />
+                  </svg>
+                </div>
+                {status === 'parsing' ? (
+                  <>
+                    <h2>Reading {fileName}…</h2>
+                    <p className="dropzone-hint">
+                      {progress.total ? `Page ${progress.page} of ${progress.total}` : 'Opening PDF…'}
+                    </p>
+                    <div className="progress-track">
+                      <div
+                        className="progress-fill"
+                        style={{ width: progress.total ? `${(progress.page / progress.total) * 100}%` : '10%' }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2>Drop a merged shipping-label PDF here</h2>
+                    <p className="dropzone-hint">
+                      Or click to browse. Each page (label + tax invoice) becomes one row — SKU, size, color, customer, courier and totals are pulled out automatically.
+                    </p>
+                    <button className="btn btn-primary" type="button">Choose PDF</button>
+                  </>
+                )}
+                {status === 'error' && <p className="error-text">{error}</p>}
               </div>
-              {status === 'parsing' ? (
-                <>
-                  <h2>Reading {fileName}…</h2>
-                  <p className="dropzone-hint">
-                    {progress.total ? `Page ${progress.page} of ${progress.total}` : 'Opening PDF…'}
-                  </p>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill"
-                      style={{ width: progress.total ? `${(progress.page / progress.total) * 100}%` : '10%' }}
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h2>Drop a merged shipping-label PDF here</h2>
-                  <p className="dropzone-hint">
-                    Or click to browse. Each page (label + tax invoice) becomes one row — SKU, size, color, customer, courier and totals are pulled out automatically.
-                  </p>
-                  <button className="btn btn-primary" type="button">Choose PDF</button>
-                </>
-              )}
-              {status === 'error' && <p className="error-text">{error}</p>}
-            </div>
-          </section>
+            </section>
+
+            <PrefixManager
+              prefixInput={prefixInput}
+              setPrefixInput={setPrefixInput}
+              activePrefixes={activePrefixes}
+              onReset={handleResetPrefixes}
+              onClear={handleClearPrefixes}
+              onUploadFile={handlePrefixFileUpload}
+              quickPrefix={quickPrefix}
+              setQuickPrefix={setQuickPrefix}
+              onAddPrefix={() => handleAddPrefix()}
+              onRemovePrefix={handleRemovePrefix}
+              isCollapsible={false}
+            />
+          </div>
         ) : (
           <>
+            {showPrefixManager && (
+              <PrefixManager
+                prefixInput={prefixInput}
+                setPrefixInput={setPrefixInput}
+                activePrefixes={activePrefixes}
+                onReset={handleResetPrefixes}
+                onClear={handleClearPrefixes}
+                onUploadFile={handlePrefixFileUpload}
+                quickPrefix={quickPrefix}
+                setQuickPrefix={setQuickPrefix}
+                onAddPrefix={() => handleAddPrefix()}
+                onRemovePrefix={handleRemovePrefix}
+                onClose={() => setShowPrefixManager(false)}
+                isCollapsible={true}
+              />
+            )}
             {/* View Tabs */}
             <div className="view-tabs">
               <button
@@ -740,9 +1003,28 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="sku-summary-banner">
-                  <span className="banner-tag">Normalized Rule</span>
-                  <span>Prefixes (<code>ORBIT</code>, <code>ORBT</code>, <code>QRP</code>, <code>RTFN</code>, <code>RTN</code>, <code>TTF</code>, <code>VDT</code>, <code>VD</code>, <code>DD</code>, <code>RC</code>, <code>RF</code>) and all digits/numbers are ignored and merged into their base SKU.</span>
+                <div className="sku-summary-banner-interactive">
+                  <div className="banner-left">
+                    <span className="banner-tag">Normalized Rule</span>
+                    <span>
+                      Ignoring {activePrefixes.length} prefix{activePrefixes.length !== 1 ? 'es' : ''} (
+                      {activePrefixes.slice(0, 8).map((p, i) => (
+                        <React.Fragment key={p}>
+                          {i > 0 && ', '}
+                          <code>{p}</code>
+                        </React.Fragment>
+                      ))}
+                      {activePrefixes.length > 8 && ` +${activePrefixes.length - 8} more`}
+                      ) &amp; all numbers.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowPrefixManager((prev) => !prev)}
+                  >
+                    {showPrefixManager ? '▲ Hide Prefixes' : '🏷️ Edit SKU Prefixes'}
+                  </button>
                 </div>
 
                 <section className="toolbar">
